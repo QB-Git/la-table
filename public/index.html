@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10120f">
+  <title>La Table — jeu de rôle</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <main id="auth-view" class="auth-shell"></main>
+
+  <div id="app-view" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-row"><a class="brand" href="#" aria-label="La Table, accueil">
+          <span class="brand-mark">L<span>·</span></span>
+          <span class="brand-copy"><strong>LA TABLE</strong><small>un espace de jeu</small></span>
+        </a><button id="sidebar-toggle" class="icon-button sidebar-toggle" title="Replier le menu" aria-label="Replier le menu" aria-expanded="true">‹</button></div>
+      <div id="sidebar-group-heading" class="sidebar-heading"><span>TES DOSSIERS</span><button id="new-group" class="icon-button" title="Nouveau dossier" aria-label="Nouveau dossier">＋</button></div>
+      <nav id="group-list" class="group-list" aria-label="Dossiers de groupes"></nav>
+      <div class="sidebar-bottom">
+        <span class="live-dot"></span><span>Partie synchronisée</span>
+      </div>
+      <div class="account-row"><div class="avatar" id="account-avatar">?</div><div class="account-copy"><strong id="account-name"></strong><small id="account-role"></small></div><div class="account-actions"><button id="change-password" class="icon-button" title="Changer mon mot de passe" aria-label="Changer mon mot de passe">↻</button><button id="logout" class="icon-button logout" title="Déconnexion" aria-label="Déconnexion">↗</button></div></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="topbar-title"><button id="mobile-menu" class="icon-button mobile-menu" aria-label="Ouvrir le menu" aria-expanded="false">☰</button><div class="breadcrumb"><span>ESPACE DE JEU</span><span class="crumb-slash">/</span><strong id="current-group-name">Choisis un dossier</strong></div></div>
+        <div class="topbar-right"><span class="sync-label"><i></i> En direct</span><button id="rename-group" class="button button-quiet hidden">Renommer</button></div>
+      </header>
+      <section id="welcome" class="welcome-panel">
+        <div class="welcome-kicker"><span class="eyebrow-line"></span> TON ESPACE DE JEU</div>
+        <h1>Les histoires<br>se jouent <em>ensemble.</em></h1>
+        <p>Crée un dossier pour ta prochaine partie, invite les joueurs et garde les fiches à portée de main.</p>
+        <button id="welcome-new-group" class="button button-primary">Créer un dossier <span>↗</span></button>
+        <div class="welcome-note">Les données restent sur l’ordinateur du MJ.</div>
+        <div class="welcome-orbit orbit-one"></div><div class="welcome-orbit orbit-two"></div>
+      </section>
+      <section id="group-view" class="group-view hidden">
+        <div class="group-intro">
+          <div><div class="eyebrow"><span class="eyebrow-line"></span> ESPACE DE PARTIE</div><h1 id="group-title"></h1><p id="group-subtitle"></p><button id="back-to-group-overview" class="button button-quiet hidden">← Retour à l’aperçu du groupe</button></div>
+          <button id="add-player" class="button button-primary hidden"><span class="button-plus">＋</span> Ajouter un joueur</button>
+        </div>
+        <section id="group-overview" class="group-overview hidden"></section>
+        <div id="empty-group" class="empty-group hidden"><div class="empty-mark">✳</div><h2>La table est prête.</h2><p>Ajoute les joueurs de ce dossier pour créer leurs fiches.</p><button id="empty-add-player" class="button button-primary">Ajouter le premier joueur <span>↗</span></button></div>
+        <div id="roster-layout" class="roster-layout hidden">
+          <aside class="roster-panel"><div class="panel-heading"><span>À LA TABLE</span><span id="roster-count" class="count-pill">0</span></div><div id="roster-list" class="roster-list"></div></aside>
+          <section id="character-panel" class="character-panel"></section>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <button id="sidebar-scrim" class="sidebar-scrim hidden" aria-label="Fermer le menu"></button>
+  <div id="modal-root"></div>
+</body>
+</html>

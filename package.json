@@ -1,0 +1,13 @@
+{
+  "name": "table-de-jeu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fiches de personnage et outils légers pour une partie de jeu de rôle auto-hébergée.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
