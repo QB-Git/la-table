@@ -300,6 +300,15 @@ function closeUserStreams(userId) {
   }
 }
 
+function closeGroupUserStreams(groupId, userId) {
+  for (const stream of streams) {
+    if (stream.groupId === groupId && stream.userId === userId) {
+      streams.delete(stream);
+      stream.res.end();
+    }
+  }
+}
+
 function safeEqual(a, b) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -437,6 +446,42 @@ async function api(req, res, url) {
     }
     closeUserStreams(player.id);
     saveDb();
+    return json(res, 200, { ok: true });
+  }
+
+  const removePlayerMatch = route.match(/^\/api\/groups\/([\w-]+)\/players\/([\w-]+)$/);
+  if (removePlayerMatch && method === 'DELETE') {
+    const [, groupId, playerId] = removePlayerMatch;
+    const group = groupFor(groupId);
+    if (!group || !canManage(user, groupId) || !group.memberIds.includes(playerId)) {
+      return json(res, 404, { error: 'Joueur introuvable dans ce groupe.' });
+    }
+    const player = db.users.find((item) => item.id === playerId && item.role === 'player');
+    if (!player) return json(res, 404, { error: 'Compte joueur introuvable.' });
+    group.memberIds = group.memberIds.filter((memberId) => memberId !== playerId);
+    db.characters = db.characters.filter((character) => !(character.groupId === groupId && character.userId === playerId));
+    closeGroupUserStreams(groupId, playerId);
+    saveDb();
+    broadcast(groupId, { type: 'refresh' });
+    return json(res, 200, { ok: true });
+  }
+
+  const deleteUserMatch = route.match(/^\/api\/users\/([\w-]+)$/);
+  if (deleteUserMatch && method === 'DELETE') {
+    if (user.role !== 'mj') return json(res, 403, { error: 'Seul le MJ peut supprimer un compte.' });
+    const playerId = deleteUserMatch[1];
+    const player = db.users.find((item) => item.id === playerId && item.role === 'player');
+    if (!player) return json(res, 404, { error: 'Compte joueur introuvable.' });
+    const affectedGroups = db.groups.filter((group) => group.memberIds.includes(playerId));
+    for (const group of affectedGroups) group.memberIds = group.memberIds.filter((memberId) => memberId !== playerId);
+    db.characters = db.characters.filter((character) => character.userId !== playerId);
+    db.users = db.users.filter((item) => item.id !== playerId);
+    for (const [token, session] of sessions) {
+      if (session.userId === playerId) sessions.delete(token);
+    }
+    closeUserStreams(playerId);
+    saveDb();
+    for (const group of affectedGroups) broadcast(group.id, { type: 'refresh' });
     return json(res, 200, { ok: true });
   }
 

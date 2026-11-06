@@ -172,11 +172,27 @@ async function main() {
     assert.equal(resetPassword.response.status, 200);
     assert.equal((await call(`/api/groups/${groupId}`, { cookie: newLogin.cookie })).response.status, 401);
     assert.equal((await call('/api/login', { method: 'POST', body: { username: 'joueur', password: 'joueur-nouveau' } })).response.status, 401);
+    const resetLogin = await call('/api/login', { method: 'POST', body: { username: 'joueur', password: 'reset-joueur' } });
+    assert.equal(resetLogin.response.status, 200);
+
+    const removeFromGroup = await call(`/api/groups/${group2.data.group.id}/players/${added.data.member.user.id}`, {
+      method: 'DELETE', cookie: mjCookie
+    });
+    assert.equal(removeFromGroup.response.status, 200);
+    assert.equal((await call(`/api/groups/${group2.data.group.id}`, { cookie: mjCookie })).data.members.length, 0);
+    assert.equal((await call(`/api/groups/${groupId}`, { cookie: mjCookie })).data.members.length, 1);
     assert.equal((await call('/api/login', { method: 'POST', body: { username: 'joueur', password: 'reset-joueur' } })).response.status, 200);
+
+    const forbiddenAccountDelete = await call(`/api/users/${added.data.member.user.id}`, { method: 'DELETE', cookie: resetLogin.cookie });
+    assert.equal(forbiddenAccountDelete.response.status, 403);
+    const deleteAccount = await call(`/api/users/${added.data.member.user.id}`, { method: 'DELETE', cookie: mjCookie });
+    assert.equal(deleteAccount.response.status, 200);
+    assert.equal((await call(`/api/groups/${groupId}`, { cookie: mjCookie })).data.members.length, 0);
+    assert.equal((await call('/api/login', { method: 'POST', body: { username: 'joueur', password: 'reset-joueur' } })).response.status, 401);
 
     const deniedGroup = await call(`/api/groups/${groupId}`, { cookie: undefined });
     assert.equal(deniedGroup.response.status, 401);
-    console.log('Tests OK : groupes, fiche et inventaire, budgets, confidentialité, et changements/réinitialisations de mot de passe.');
+    console.log('Tests OK : fiches, inventaires, budgets, confidentialité, mots de passe et suppressions MJ.');
   } finally {
     child.kill();
     fs.rmSync(dataDir, { recursive: true, force: true });

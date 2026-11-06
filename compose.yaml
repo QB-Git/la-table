@@ -1,0 +1,22 @@
+services:
+  la-table:
+    image: node:22-alpine
+    container_name: la-table
+    working_dir: /app
+    volumes:
+      - ./server.js:/app/server.js:ro
+      - ./public:/app/public:ro
+      - ./data:/app/data
+    restart: 'unless-stopped'
+    user: "${PUID:-1000}:${PGID:-1000}"
+    command: ["node", "server.js"]
+    environment:
+      - HOST=0.0.0.0
+      - PORT=${PORT:-3456}
+      - DATA_DIR=/app/data
+    networks:
+      - network_example
+
+networks:
+  network_example:
+    external: true

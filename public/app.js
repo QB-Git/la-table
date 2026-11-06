@@ -1,6 +1,6 @@
 const STAT_NAMES = ['Physique', 'Dextérité', 'Agilité', 'Intelligence', 'Volonté', 'Perception'];
 const STAT_SHORT = { Physique: 'PHY', Dextérité: 'DEX', Agilité: 'AGI', Intelligence: 'INT', Volonté: 'VOL', Perception: 'PER' };
-const state = { user: null, groups: [], group: null, members: [], selectedCharacterId: null, events: null, page: 'welcome' };
+const state = { user: null, groups: [], group: null, members: [], playerCharacters: [], selectedCharacterId: null, events: null, page: 'welcome' };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -72,6 +72,7 @@ async function enterApp(preferredGroupId = state.group?.id) {
   $('#account-role').textContent = state.user.role === 'mj' ? 'Maître du jeu' : 'Joueur';
   $('#account-avatar').textContent = state.user.username.slice(0, 2);
   renderGroups();
+  await refreshPlayerSwitcher();
   if (state.groups.length) {
     const selected = state.groups.find((group) => group.id === preferredGroupId) || state.groups[0];
     await loadGroup(selected.id);
@@ -108,6 +109,33 @@ function closeMobileSidebar() {
   $('#mobile-menu').setAttribute('aria-expanded', 'false');
 }
 
+async function refreshPlayerSwitcher() {
+  const select = $('#player-character-switcher');
+  if (state.user?.role !== 'player' || state.groups.length < 2) {
+    state.playerCharacters = [];
+    select.classList.add('hidden');
+    select.replaceChildren();
+    return;
+  }
+  const characters = await Promise.all(state.groups.map(async (group) => {
+    try {
+      const data = await request(`/api/groups/${group.id}`);
+      const character = data.members.find((member) => member.user.id === state.user.id)?.character;
+      return character ? { groupId: group.id, groupName: group.name, character } : null;
+    } catch { return null; }
+  }));
+  state.playerCharacters = characters.filter(Boolean);
+  select.replaceChildren(...state.playerCharacters.map(({ groupId, groupName, character }) => {
+    const option = document.createElement('option');
+    option.value = groupId;
+    const name = [character.firstName, character.name].filter(Boolean).join(' ') || 'Personnage à définir';
+    option.textContent = `${name} · ${groupName}`;
+    return option;
+  }));
+  select.classList.toggle('hidden', state.playerCharacters.length < 2);
+  if (state.group) select.value = state.group.id;
+}
+
 function showWelcome() {
   disconnectEvents();
   state.page = 'welcome';
@@ -135,6 +163,7 @@ async function loadGroup(groupId) {
     $('#current-group-name').textContent = state.group.name;
     $('#group-title').textContent = state.group.name;
     $('#group-subtitle').textContent = `${state.members.length} ${state.members.length === 1 ? 'joueur' : 'joueurs'} dans ce dossier`;
+    if (state.user.role === 'player') await refreshPlayerSwitcher();
     $('#rename-group').classList.toggle('hidden', state.group.role !== 'mj');
     $('#add-player').classList.toggle('hidden', state.group.role !== 'mj');
     renderGroupContent();
@@ -183,6 +212,7 @@ async function refreshGroup(groupId) {
       ? selected
       : state.user.role === 'mj' ? state.members[0]?.character?.id || null : state.members.find((item) => item.user.id === state.user.id)?.character?.id || null;
     $('#group-subtitle').textContent = `${state.members.length} ${state.members.length === 1 ? 'joueur' : 'joueurs'} dans ce dossier`;
+    if (state.user.role === 'player') await refreshPlayerSwitcher();
     renderGroupContent();
     renderGroups();
   } catch (error) { showToast(error.message); }
@@ -313,7 +343,7 @@ function renderCharacter() {
       <div class="list-box inventory-box"><div class="section-title"><span>INVENTAIRE</span><small>une ligne par objet</small></div><textarea class="line-textarea public-field" name="inventory" aria-label="Inventaire" placeholder="Sac, lampe torche, trousse de secours…" ${editable ? '' : 'disabled'}>${escapeHtml((c.inventory || []).join('\n'))}</textarea></div>
        ${editable ? `<div class="form-footer"><span class="save-status" id="save-status">${c.updatedAt ? `Dernière modification · ${formatTime(c.updatedAt)}` : 'Modifications non enregistrées'}</span><button class="button button-primary save-button" type="submit">Enregistrer <span>↗</span></button></div>` : '<div class="readonly-note">Cette fiche appartient à un autre joueur. Le MJ peut la modifier.</div>'}
      </form>
-     ${mj ? `<div class="character-admin-footer"><span>Compte joueur : ${escapeHtml(member.user.username)}</span><button id="reset-current-password" class="reset-player-password">Réinitialiser le mot de passe</button></div>` : ''}
+     ${mj ? `<div class="character-admin-footer"><span>Administration du compte : <strong>${escapeHtml(member.user.username)}</strong></span><div class="character-admin-actions"><button id="reset-current-password" class="reset-player-password">Réinitialiser le mot de passe</button><button id="remove-player-character" class="button button-danger">Retirer du groupe</button><button id="delete-player-account" class="button button-danger button-danger-strong">Supprimer le compte</button></div></div>` : ''}
    </article>`;
   const form = $('#character-form');
   if (editable) {
@@ -326,6 +356,8 @@ function renderCharacter() {
   }
   if (mj) {
     $('#reset-current-password').addEventListener('click', () => resetPlayerPasswordModal(member.user.id, member.user.username));
+    $('#remove-player-character').addEventListener('click', () => removePlayerFromGroupModal(member.user.id, member.user.username, displayName));
+    $('#delete-player-account').addEventListener('click', () => deletePlayerAccountModal(member.user.id, member.user.username));
     $('#add-private-stat').addEventListener('click', () => {
       const list = $('#private-stats');
       list.insertAdjacentHTML('beforeend', privateStatHtml({ name: '', value: 0 }, $$('.private-row', list).length));
@@ -474,6 +506,40 @@ function resetPasswordSuccessModal(username, password) {
   openModal(`<div class="modal-header"><div><h2>Mot de passe réinitialisé</h2><p>Les anciennes sessions de ce joueur ont été déconnectées.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><div class="credential-box">Identifiant&nbsp;: ${escapeHtml(username)}<br>Nouveau mot de passe&nbsp;: ${escapeHtml(password)}</div><div class="credential-note">Le mot de passe n’est affiché qu’une fois. Transmets-le au joueur en privé.</div><button class="button button-primary" id="reset-password-done">Compris <span>↗</span></button>`, (root) => $('#reset-password-done', root).addEventListener('click', closeModal));
 }
 
+function removePlayerFromGroupModal(userId, username, characterName) {
+  const groupId = state.group.id;
+  const groupName = state.group.name;
+  openModal(`<div class="modal-header"><div><h2>Retirer ce personnage du groupe ?</h2><p>La fiche de <strong>${escapeHtml(characterName)}</strong> sera supprimée de « ${escapeHtml(groupName)} ».</p></div><button class="modal-close" aria-label="Fermer">×</button></div><div class="credential-note">Le compte de ${escapeHtml(username)} et ses personnages dans les autres groupes ne seront pas supprimés.</div><div class="modal-actions"><button class="button button-quiet modal-cancel">Annuler</button><button class="button button-danger" id="confirm-remove-player">Retirer du groupe</button></div>`, (root) => {
+    $('.modal-cancel', root).addEventListener('click', closeModal);
+    $('#confirm-remove-player', root).addEventListener('click', async () => {
+      try {
+        await request(`/api/groups/${groupId}/players/${userId}`, { method: 'DELETE' });
+        closeModal();
+        await enterApp(groupId);
+        showToast('Personnage retiré du groupe');
+      } catch (error) { showToast(error.message); }
+    });
+  });
+}
+
+function deletePlayerAccountModal(userId, username) {
+  openModal(`<div class="modal-header"><div><h2>Supprimer le compte joueur ?</h2><p>Cette action efface son compte et tous ses personnages, dans tous les groupes.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><form id="delete-player-form"><label class="field-label" for="delete-player-confirm">Pour confirmer, saisis son identifiant : <strong>${escapeHtml(username)}</strong></label><input class="text-input" id="delete-player-confirm" name="confirmation" required autocomplete="off"><div class="modal-error"></div><div class="modal-actions"><button class="button button-quiet modal-cancel" type="button">Annuler</button><button class="button button-danger button-danger-strong" type="submit">Supprimer définitivement</button></div></form>`, (root) => {
+    $('.modal-cancel', root).addEventListener('click', closeModal);
+    $('#delete-player-form', root).addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const confirmation = new FormData(event.currentTarget).get('confirmation');
+      if (confirmation !== username) return $('.modal-error', root).textContent = 'L’identifiant ne correspond pas.';
+      try {
+        await request(`/api/users/${userId}`, { method: 'DELETE' });
+        closeModal();
+        const groupId = state.group.id;
+        await enterApp(groupId);
+        showToast('Compte joueur et personnages supprimés');
+      } catch (error) { $('.modal-error', root).textContent = error.message; }
+    });
+  });
+}
+
 async function renameGroup() {
   const group = state.group;
   openModal(`<div class="modal-header"><div><h2>Renommer le dossier</h2><p>Le nom sera mis à jour pour tous ses membres.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><form id="rename-form"><label class="field-label" for="rename-input">Nom du dossier</label><input class="text-input" id="rename-input" name="name" required maxlength="70" value="${escapeHtml(group.name)}"><div class="modal-error"></div><button class="button button-primary" type="submit">Enregistrer <span>↗</span></button></form>`, (root) => {
@@ -493,6 +559,7 @@ $('#empty-add-player').addEventListener('click', addPlayerModal);
 $('#rename-group').addEventListener('click', renameGroup);
 $('#back-to-group-overview').addEventListener('click', showGroupOverview);
 $('#change-password').addEventListener('click', changePasswordModal);
+$('#player-character-switcher').addEventListener('change', (event) => loadGroup(event.currentTarget.value));
 $('#sidebar-toggle').addEventListener('click', () => {
   const collapsed = !$('#app-view').classList.contains('sidebar-collapsed');
   localStorage.setItem('table-sidebar-collapsed', String(collapsed));
