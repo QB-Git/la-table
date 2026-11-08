@@ -73,6 +73,7 @@ async function main() {
     assert.equal(added.data.member.character.skills.length, 2);
     assert.equal(added.data.member.character.flaws.length, 1);
     assert.equal(added.data.member.character.inventory.length, 0);
+    assert.equal(added.data.member.character.notes, '');
     assert.equal(added.data.member.character.name, '');
     assert.equal(added.data.member.character.firstName, '');
     assert.deepEqual(Object.keys(added.data.member.character.stats), ['Physique', 'Dextérité', 'Agilité', 'Intelligence', 'Volonté', 'Perception']);
@@ -131,10 +132,11 @@ async function main() {
     assert.equal(playerBudgetView.data.members[0].character.statPointsBonus, undefined);
 
     const inventoryUpdate = await call(`/api/characters/${characterId}`, {
-      method: 'PATCH', cookie: playerCookie, body: { inventory: ['Lampe torche', 'Corde'] }
+      method: 'PATCH', cookie: playerCookie, body: { inventory: ['Lampe torche', 'Corde'], notes: 'A grandi à Valombre.\nCherche son frère.' }
     });
     assert.equal(inventoryUpdate.response.status, 200);
     assert.deepEqual(inventoryUpdate.data.character.inventory, ['Lampe torche', 'Corde']);
+    assert.equal(inventoryUpdate.data.character.notes, 'A grandi à Valombre.\nCherche son frère.');
 
     const validStat = await call(`/api/characters/${characterId}`, { method: 'PATCH', cookie: playerCookie, body: { statPointsBonus: 999 } });
     assert.equal(validStat.response.status, 200);
@@ -148,6 +150,7 @@ async function main() {
     const stillPrivate = await call(`/api/groups/${groupId}`, { cookie: mjCookie });
     assert.equal(stillPrivate.data.members[0].character.privateStats.length, 4);
     assert.deepEqual(stillPrivate.data.members[0].character.inventory, ['Lampe torche', 'Corde']);
+    assert.equal(stillPrivate.data.members[0].character.notes, 'A grandi à Valombre.\nCherche son frère.');
 
     const wrongCurrentPassword = await call('/api/password', {
       method: 'POST', cookie: playerCookie, body: { currentPassword: 'wrongpw', newPassword: 'joueur-nouveau' }

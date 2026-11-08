@@ -56,6 +56,7 @@ function loadDb() {
         return {
           ...character,
           stats,
+          notes: typeof character.notes === 'string' ? character.notes : '',
           inventory: Array.isArray(character.inventory) ? cleanLines(character.inventory, 50) : [],
           statPointsInitial,
           statPointsBonus
@@ -117,6 +118,7 @@ function publicCharacter(character) {
     skills: character.skills,
     flaws: character.flaws,
     inventory: character.inventory || [],
+    notes: character.notes || '',
     updatedAt: character.updatedAt
   };
 }
@@ -214,6 +216,10 @@ function cleanLines(value, maxItems = 20) {
   return list.map((item) => cleanText(item, 180)).filter(Boolean).slice(0, maxItems);
 }
 
+function cleanMultiline(value, maxLength = 10000) {
+  return typeof value === 'string' ? value.replace(/\r\n?/g, '\n').trim().slice(0, maxLength) : '';
+}
+
 function normalizeStoredStats(value) {
   const result = {};
   for (const name of STAT_NAMES) {
@@ -268,6 +274,7 @@ function defaultCharacter(groupId, userId, fields = {}) {
     skills: ['Atout à définir 1', 'Atout à définir 2'],
     flaws: ['Défaut à définir'],
     inventory: [],
+    notes: '',
     privateStats: [
       { name: 'Points de vie', value: 10 },
       { name: 'Santé mentale', value: 10 },
@@ -587,6 +594,7 @@ async function api(req, res, url) {
     if (body.skills !== undefined) character.skills = cleanLines(body.skills, 20);
     if (body.flaws !== undefined) character.flaws = cleanLines(body.flaws, 20);
     if (body.inventory !== undefined) character.inventory = cleanLines(body.inventory, 50);
+    if (body.notes !== undefined) character.notes = cleanMultiline(body.notes);
     if (isMj && body.privateStats !== undefined) character.privateStats = cleanPrivateStats(body.privateStats);
     character.updatedAt = new Date().toISOString();
     saveDb();

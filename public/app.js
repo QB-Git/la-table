@@ -341,7 +341,8 @@ function renderCharacter() {
       </div>
       ${privateHtml}
       <div class="list-box inventory-box"><div class="section-title"><span>INVENTAIRE</span><small>une ligne par objet</small></div><textarea class="line-textarea public-field" name="inventory" aria-label="Inventaire" placeholder="Sac, lampe torche, trousse de secours…" ${editable ? '' : 'disabled'}>${escapeHtml((c.inventory || []).join('\n'))}</textarea></div>
-       ${editable ? `<div class="form-footer"><span class="save-status" id="save-status">${c.updatedAt ? `Dernière modification · ${formatTime(c.updatedAt)}` : 'Modifications non enregistrées'}</span><button class="button button-primary save-button" type="submit">Enregistrer <span>↗</span></button></div>` : '<div class="readonly-note">Cette fiche appartient à un autre joueur. Le MJ peut la modifier.</div>'}
+      <div class="list-box lore-box"><div class="section-title"><span>LORE / NOTES</span><small>informations sur le personnage</small></div><textarea class="line-textarea public-field lore-textarea" name="notes" aria-label="Lore et notes" placeholder="Histoire, objectifs, informations à retenir…" ${editable ? '' : 'disabled'}>${escapeHtml(c.notes || '')}</textarea></div>
+      ${editable ? `<div class="form-footer"><span class="save-status" id="save-status">${c.updatedAt ? `Dernière modification · ${formatTime(c.updatedAt)}` : 'Modifications non enregistrées'}</span><button class="button button-primary save-button" type="submit">Enregistrer <span>↗</span></button></div>` : '<div class="readonly-note">Cette fiche appartient à un autre joueur. Le MJ peut la modifier.</div>'}
      </form>
      ${mj ? `<div class="character-admin-footer"><span>Administration du compte : <strong>${escapeHtml(member.user.username)}</strong></span><div class="character-admin-actions"><button id="reset-current-password" class="reset-player-password">Réinitialiser le mot de passe</button><button id="remove-player-character" class="button button-danger">Retirer du groupe</button><button id="delete-player-account" class="button button-danger button-danger-strong">Supprimer le compte</button></div></div>` : ''}
    </article>`;
@@ -395,7 +396,8 @@ async function saveCharacter(event) {
     luck: Number(formData.get('luck')),
     skills: String(formData.get('skills') || '').split('\n'),
     flaws: String(formData.get('flaws') || '').split('\n'),
-    inventory: String(formData.get('inventory') || '').split('\n')
+    inventory: String(formData.get('inventory') || '').split('\n'),
+    notes: String(formData.get('notes') || '')
   };
   if (state.group.role === 'mj') {
     payload.privateStats = $$('.private-row', form).map((row) => ({ name: $('.private-name-input', row).value, value: Number($('.private-input', row).value) }));
