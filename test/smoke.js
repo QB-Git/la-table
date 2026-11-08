@@ -131,12 +131,21 @@ async function main() {
     assert.equal(playerBudgetView.data.members[0].character.statPointsAvailable, 36);
     assert.equal(playerBudgetView.data.members[0].character.statPointsBonus, undefined);
 
-    const inventoryUpdate = await call(`/api/characters/${characterId}`, {
-      method: 'PATCH', cookie: playerCookie, body: { inventory: ['Lampe torche', 'Corde'], notes: 'A grandi à Valombre.\nCherche son frère.' }
+    const loreUpdate = await call(`/api/characters/${characterId}`, {
+      method: 'PATCH', cookie: playerCookie, body: { notes: 'A grandi à Valombre.\nCherche son frère.' }
     });
-    assert.equal(inventoryUpdate.response.status, 200);
-    assert.deepEqual(inventoryUpdate.data.character.inventory, ['Lampe torche', 'Corde']);
-    assert.equal(inventoryUpdate.data.character.notes, 'A grandi à Valombre.\nCherche son frère.');
+    assert.equal(loreUpdate.response.status, 200);
+    assert.equal(loreUpdate.data.character.notes, 'A grandi à Valombre.\nCherche son frère.');
+    const remoteInventoryUpdate = await call(`/api/characters/${characterId}`, {
+      method: 'PATCH', cookie: mjCookie, body: { inventory: ['Objet ajouté par le MJ'] }
+    });
+    assert.equal(remoteInventoryUpdate.response.status, 200);
+    const loreAfterRemoteUpdate = await call(`/api/characters/${characterId}`, {
+      method: 'PATCH', cookie: playerCookie, body: { notes: 'Lore ajusté après la modification du MJ.' }
+    });
+    assert.equal(loreAfterRemoteUpdate.response.status, 200);
+    assert.deepEqual(loreAfterRemoteUpdate.data.character.inventory, ['Objet ajouté par le MJ']);
+    assert.equal(loreAfterRemoteUpdate.data.character.notes, 'Lore ajusté après la modification du MJ.');
 
     const validStat = await call(`/api/characters/${characterId}`, { method: 'PATCH', cookie: playerCookie, body: { statPointsBonus: 999 } });
     assert.equal(validStat.response.status, 200);
@@ -149,8 +158,8 @@ async function main() {
     assert.equal(forbidden.data.character.privateStats, undefined);
     const stillPrivate = await call(`/api/groups/${groupId}`, { cookie: mjCookie });
     assert.equal(stillPrivate.data.members[0].character.privateStats.length, 4);
-    assert.deepEqual(stillPrivate.data.members[0].character.inventory, ['Lampe torche', 'Corde']);
-    assert.equal(stillPrivate.data.members[0].character.notes, 'A grandi à Valombre.\nCherche son frère.');
+    assert.deepEqual(stillPrivate.data.members[0].character.inventory, ['Objet ajouté par le MJ']);
+    assert.equal(stillPrivate.data.members[0].character.notes, 'Lore ajusté après la modification du MJ.');
 
     const wrongCurrentPassword = await call('/api/password', {
       method: 'POST', cookie: playerCookie, body: { currentPassword: 'wrongpw', newPassword: 'joueur-nouveau' }

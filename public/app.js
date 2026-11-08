@@ -1,6 +1,6 @@
 const STAT_NAMES = ['Physique', 'Dextérité', 'Agilité', 'Intelligence', 'Volonté', 'Perception'];
 const STAT_SHORT = { Physique: 'PHY', Dextérité: 'DEX', Agilité: 'AGI', Intelligence: 'INT', Volonté: 'VOL', Perception: 'PER' };
-const state = { user: null, groups: [], group: null, members: [], playerCharacters: [], selectedCharacterId: null, events: null, page: 'welcome' };
+const state = { user: null, groups: [], group: null, members: [], playerCharacters: [], selectedCharacterId: null, events: null, page: 'welcome', characterDirty: false, characterChanges: new Set() };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -109,6 +109,10 @@ function closeMobileSidebar() {
   $('#mobile-menu').setAttribute('aria-expanded', 'false');
 }
 
+function confirmUnsavedChanges() {
+  return !state.characterDirty || window.confirm('Cette fiche contient des modifications non enregistrées. Les abandonner ?');
+}
+
 async function refreshPlayerSwitcher() {
   const select = $('#player-character-switcher');
   if (state.user?.role !== 'player' || state.groups.length < 2) {
@@ -149,6 +153,10 @@ function showWelcome() {
 }
 
 async function loadGroup(groupId) {
+  if (state.group && state.group.id !== groupId && !confirmUnsavedChanges()) {
+    if (state.user?.role === 'player') $('#player-character-switcher').value = state.group.id;
+    return;
+  }
   try {
     const data = await request(`/api/groups/${groupId}`);
     closeMobileSidebar();
@@ -203,19 +211,77 @@ function subscribeEvents(groupId) {
 async function refreshGroup(groupId) {
   if (state.group?.id !== groupId) return;
   const selected = state.selectedCharacterId;
+  const draft = state.page === 'group-sheet' ? captureCharacterDraft() : null;
   try {
     const [groupData, me] = await Promise.all([request(`/api/groups/${groupId}`), request('/api/me')]);
     state.groups = me.groups;
     state.group = groupData.group;
     state.members = groupData.members;
-    state.selectedCharacterId = state.members.some((item) => item.character?.id === selected)
+    const selectedStillExists = state.members.some((item) => item.character?.id === selected);
+    state.selectedCharacterId = selectedStillExists
       ? selected
       : state.user.role === 'mj' ? state.members[0]?.character?.id || null : state.members.find((item) => item.user.id === state.user.id)?.character?.id || null;
     $('#group-subtitle').textContent = `${state.members.length} ${state.members.length === 1 ? 'joueur' : 'joueurs'} dans ce dossier`;
     if (state.user.role === 'player') await refreshPlayerSwitcher();
     renderGroupContent();
+    if (draft && selectedStillExists) restoreCharacterDraft(draft);
+    else if (draft && !selectedStillExists) showToast('La fiche a été retirée pendant tes modifications.');
     renderGroups();
   } catch (error) { showToast(error.message); }
+}
+
+function markCharacterField(field) {
+  state.characterChanges.add(field);
+  state.characterDirty = true;
+  const status = $('#save-status');
+  if (status) status.textContent = 'Modifications non enregistrées';
+}
+
+function captureCharacterDraft() {
+  if (!state.characterDirty) return null;
+  const form = $('#character-form');
+  if (!form) return null;
+  const fields = {};
+  for (const field of state.characterChanges) {
+    if (field.startsWith('stat:')) {
+      const stat = field.slice(5);
+      const input = $$('[data-stat]', form).find((item) => item.dataset.stat === stat);
+      if (input) fields[field] = input.value;
+    } else if (field === 'privateStats') {
+      fields[field] = $$('.private-row', form).map((row) => ({
+        name: $('.private-name-input', row).value,
+        value: $('.private-input', row).value
+      }));
+    } else {
+      const control = form.elements.namedItem(field);
+      if (control) fields[field] = control.value;
+    }
+  }
+  return { characterId: state.selectedCharacterId, fields };
+}
+
+function restoreCharacterDraft(draft) {
+  if (draft.characterId !== state.selectedCharacterId) return;
+  const form = $('#character-form');
+  if (!form) return;
+  for (const [field, value] of Object.entries(draft.fields)) {
+    if (field.startsWith('stat:')) {
+      const stat = field.slice(5);
+      const input = $$('[data-stat]', form).find((item) => item.dataset.stat === stat);
+      if (input) input.value = value;
+    } else if (field === 'privateStats') {
+      const list = $('#private-stats', form);
+      if (list) list.innerHTML = value.map((stat, index) => privateStatHtml({ name: stat.name, value: Number(stat.value) }, index)).join('');
+    } else {
+      const control = form.elements.namedItem(field);
+      if (control) control.value = value;
+    }
+  }
+  state.characterChanges = new Set(Object.keys(draft.fields));
+  state.characterDirty = state.characterChanges.size > 0;
+  updateAllocationControls(form, selectedMember().character);
+  const status = $('#save-status', form);
+  if (status && state.characterDirty) status.textContent = 'Fiche modifiée ailleurs ; tes modifications restent à enregistrer.';
 }
 
 function renderGroupContent() {
@@ -252,11 +318,17 @@ function renderGroupOverview() {
 
 function showGroupOverview() {
   if (!state.group) return;
+  if (!confirmUnsavedChanges()) return;
+  state.characterDirty = false;
+  state.characterChanges.clear();
   state.page = 'group-overview';
   renderGroupContent();
 }
 
 function showGroupCharacter(characterId) {
+  if (state.selectedCharacterId !== characterId && !confirmUnsavedChanges()) return;
+  state.characterDirty = false;
+  state.characterChanges.clear();
   state.selectedCharacterId = characterId;
   state.page = 'group-sheet';
   renderGroupContent();
@@ -276,6 +348,9 @@ function renderRoster() {
     return `<button class="roster-item ${state.selectedCharacterId === c?.id ? 'active' : ''}" data-character="${c?.id || ''}"><span class="roster-avatar">${escapeHtml(initials(member))}</span><span class="roster-names"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(c?.job || member.user.username)}</small></span></button>`;
   }).join('');
   $$('.roster-item', roster).forEach((button) => button.addEventListener('click', () => {
+    if (state.selectedCharacterId !== button.dataset.character && !confirmUnsavedChanges()) return;
+    state.characterDirty = false;
+    state.characterChanges.clear();
     state.selectedCharacterId = button.dataset.character;
     renderRoster();
   }));
@@ -312,7 +387,14 @@ function updateAllocationControls(form, character) {
 function renderCharacter() {
   const panel = $('#character-panel');
   const member = selectedMember();
-  if (!member) { panel.innerHTML = ''; return; }
+  if (!member) {
+    state.characterDirty = false;
+    state.characterChanges = new Set();
+    panel.innerHTML = '';
+    return;
+  }
+  state.characterDirty = false;
+  state.characterChanges = new Set();
   const c = member.character;
   const editable = state.group.role === 'mj' || member.user.id === state.user.id;
   const mj = state.group.role === 'mj';
@@ -349,10 +431,13 @@ function renderCharacter() {
   const form = $('#character-form');
   if (editable) {
     form.addEventListener('submit', saveCharacter);
-    $$('.stat-input[data-stat]', form).forEach((input) => input.addEventListener('input', () => {
-      updateAllocationControls(form, c);
-    }));
-    $('#stat-points-bonus', form)?.addEventListener('input', () => updateAllocationControls(form, c));
+    form.addEventListener('input', (event) => {
+      const target = event.target;
+      if (target.dataset.stat) markCharacterField(`stat:${target.dataset.stat}`);
+      else if (target.closest('.private-row')) markCharacterField('privateStats');
+      else if (target.name) markCharacterField(target.name);
+      if (target.dataset.stat || target.name === 'statPointsBonus') updateAllocationControls(form, c);
+    });
     updateAllocationControls(form, c);
   }
   if (mj) {
@@ -362,12 +447,16 @@ function renderCharacter() {
     $('#add-private-stat').addEventListener('click', () => {
       const list = $('#private-stats');
       list.insertAdjacentHTML('beforeend', privateStatHtml({ name: '', value: 0 }, $$('.private-row', list).length));
+      markCharacterField('privateStats');
       const input = $('.private-name-input', list.lastElementChild);
       input.focus();
     });
     $('#private-stats').addEventListener('click', (event) => {
       const button = event.target.closest('.remove-stat');
-      if (button) button.closest('.private-row').remove();
+      if (button) {
+        button.closest('.private-row').remove();
+        markCharacterField('privateStats');
+      }
     });
   }
 }
@@ -387,25 +476,39 @@ async function saveCharacter(event) {
   const form = event.currentTarget;
   const button = $('.save-button', form);
   const status = $('#save-status', form);
-  button.disabled = true;
-  status.textContent = 'Enregistrement…';
   const formData = new FormData(form);
-  const payload = {
-    firstName: formData.get('firstName'), name: formData.get('name'), job: formData.get('job'),
-    stats: Object.fromEntries($$('.stat-input[data-stat]', form).map((input) => [input.dataset.stat, Number(input.value)])),
-    luck: Number(formData.get('luck')),
-    skills: String(formData.get('skills') || '').split('\n'),
-    flaws: String(formData.get('flaws') || '').split('\n'),
-    inventory: String(formData.get('inventory') || '').split('\n'),
-    notes: String(formData.get('notes') || '')
-  };
-  if (state.group.role === 'mj') {
-    payload.privateStats = $$('.private-row', form).map((row) => ({ name: $('.private-name-input', row).value, value: Number($('.private-input', row).value) }));
+  const changes = new Set(state.characterChanges);
+  const payload = {};
+  for (const field of ['firstName', 'name', 'job', 'notes']) {
+    if (changes.has(field)) payload[field] = String(formData.get(field) || '');
+  }
+  if (changes.has('luck')) payload.luck = Number(formData.get('luck'));
+  for (const field of ['skills', 'flaws', 'inventory']) {
+    if (changes.has(field)) payload[field] = String(formData.get(field) || '').split('\n');
+  }
+  const changedStats = Object.fromEntries([...changes]
+    .filter((field) => field.startsWith('stat:'))
+    .map((field) => {
+      const stat = field.slice(5);
+      return [stat, Number($$('[data-stat]', form).find((input) => input.dataset.stat === stat)?.value)];
+    }));
+  if (Object.keys(changedStats).length) payload.stats = changedStats;
+  if (state.group.role === 'mj' && changes.has('statPointsBonus')) {
     payload.statPointsBonus = Number(formData.get('statPointsBonus'));
   }
+  if (state.group.role === 'mj' && changes.has('privateStats')) {
+    payload.privateStats = $$('.private-row', form).map((row) => ({ name: $('.private-name-input', row).value, value: Number($('.private-input', row).value) }));
+  }
+  if (Object.keys(payload).length === 0) return showToast('Aucune modification à enregistrer.');
+  button.disabled = true;
+  status.textContent = 'Enregistrement…';
   try {
-    await request(`/api/characters/${state.selectedCharacterId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-    status.textContent = 'Enregistré · à l’instant';
+    const saved = await request(`/api/characters/${state.selectedCharacterId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    if (Object.hasOwn(payload, 'notes') && typeof saved.character?.notes !== 'string') {
+      throw new Error('Le serveur ne reconnaît pas encore les notes. Mets à jour server.js sur OMV et redémarre le conteneur.');
+    }
+    state.characterDirty = false;
+    state.characterChanges.clear();
     await refreshGroup(state.group.id);
     showToast('Fiche mise à jour');
   } catch (error) { status.textContent = error.message; showToast(error.message); }
@@ -422,6 +525,9 @@ function openModal(content, onReady) {
 function closeModal() { $('#modal-root').innerHTML = ''; }
 
 function groupModal() {
+  if (!confirmUnsavedChanges()) return;
+  state.characterDirty = false;
+  state.characterChanges.clear();
   openModal(`<div class="modal-header"><div><h2>Créer un dossier</h2><p>Un espace distinct pour un groupe de joueurs et ses fiches.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><form id="group-form"><label class="field-label" for="group-name">Nom du dossier</label><input class="text-input" id="group-name" name="name" required maxlength="70" placeholder="ex. Les brumes de Valombre"><div class="modal-error"></div><button class="button button-primary" type="submit">Créer le dossier <span>↗</span></button></form>`, (root) => {
     $('#group-form', root).addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -438,6 +544,9 @@ function groupModal() {
 }
 
 function addPlayerModal() {
+  if (!confirmUnsavedChanges()) return;
+  state.characterDirty = false;
+  state.characterChanges.clear();
   const current = state.group;
   openModal(`<div class="modal-header"><div><h2>Ajouter un joueur</h2><p>Crée son compte ou ajoute un compte joueur déjà existant.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><form id="player-form">
     <label class="field-label" for="player-username">Identifiant du joueur</label><input class="text-input" id="player-username" name="username" required minlength="3" maxlength="40" autocomplete="off" placeholder="ex. alex">
@@ -543,6 +652,9 @@ function deletePlayerAccountModal(userId, username) {
 }
 
 async function renameGroup() {
+  if (!confirmUnsavedChanges()) return;
+  state.characterDirty = false;
+  state.characterChanges.clear();
   const group = state.group;
   openModal(`<div class="modal-header"><div><h2>Renommer le dossier</h2><p>Le nom sera mis à jour pour tous ses membres.</p></div><button class="modal-close" aria-label="Fermer">×</button></div><form id="rename-form"><label class="field-label" for="rename-input">Nom du dossier</label><input class="text-input" id="rename-input" name="name" required maxlength="70" value="${escapeHtml(group.name)}"><div class="modal-error"></div><button class="button button-primary" type="submit">Enregistrer <span>↗</span></button></form>`, (root) => {
     $('#rename-form', root).addEventListener('submit', async (event) => {
@@ -574,6 +686,7 @@ $('#mobile-menu').addEventListener('click', () => {
 });
 $('#sidebar-scrim').addEventListener('click', closeMobileSidebar);
 $('#logout').addEventListener('click', async () => {
+  if (!confirmUnsavedChanges()) return;
   disconnectEvents();
   await request('/api/logout', { method: 'POST', body: '{}' }).catch(() => {});
   state.user = null; state.groups = []; state.group = null;
